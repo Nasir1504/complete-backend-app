@@ -44,12 +44,22 @@ const registerUser = asyncHandler(async (req, res) => {
         throw new ApiError(409, "User with email or username already exists.")
     }
 
+    console.log(req.files)
     // multer gives us'req.files' excess and express give us 'req.body' and other properties excess.
     // javaScript doesn't give use excess to 'files' we have to handle it externally.
 
     const avatarLocalPath = await req.files?.avatar[0]?.path;
     console.log(avatarLocalPath)
-    const coverImageLocalPath = await req.files?.coverImage[0]?.path;
+    // const coverImageLocalPath = await req.files?.coverImage[0]?.path;
+
+    let coverImageLocalPath;
+    if(
+        req.files && 
+        Array.isArray(req.files.coverImage) &&
+        req.files.coverImage.length > 0
+    ){
+        coverImageLocalPath = req.files.coverImage[0].path
+    }
 
 
     if (!avatarLocalPath) throw new ApiError(400, "Avatar file is required")
