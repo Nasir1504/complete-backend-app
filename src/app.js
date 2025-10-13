@@ -27,3 +27,9 @@ app.use("/api/v1/users", userRouter)
 
 
 export { app }
+
+
+
+
+// Whenever a request comes to this path "/api/v1/users", use the code (router/middleware) I define.
+// Any request that starts with /api/v1/users should be handled by the routes defined inside userRouter.
