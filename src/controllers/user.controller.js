@@ -4,6 +4,7 @@ import { ApiError } from "../utils/ApiError.js";
 import { uploadOnCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshTokens = async (userId) => {
     try {
@@ -284,10 +285,14 @@ const changeCurrentPassword = asyncHandler(async (req, res) => {
 const getCurrentUser = asyncHandler(async (req, res) => {
     return res
         .status(200)
-        .json(new ApiResponse(200, req.user, "Current user fetched successfully"))
+        .json(new ApiResponse(
+            200,
+            req.user,
+            "Current user fetched successfully"
+        ))
 })
 
-
+//---------------------UPDATE ACCOUNT DETAILS------------
 const updateAccountDetails = asyncHandler(async (req, res) => {
     const { fullName, email } = req.body
 
@@ -311,6 +316,7 @@ const updateAccountDetails = asyncHandler(async (req, res) => {
         .json(new ApiResponse(200, user, "Account details updated successfully"))
 });
 
+//---------------------UPDATE USER AVATAR----------------
 const updateUserAvatar = asyncHandler(async (req, res) => {
     const avatarLocalPath = req.file?.path
 
@@ -335,6 +341,8 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
         { new: true }
     ).select("-password")
 
+    fs.unlinkSync(avatarLocalPath)
+
     return res
         .status(200)
         .json(
@@ -342,6 +350,7 @@ const updateUserAvatar = asyncHandler(async (req, res) => {
         )
 })
 
+//---------------------UPDATE COVER IMAGE----------------
 const updateUserCoverImage = asyncHandler(async (req, res) => {
     const coverImageLocalPath = req.file?.path
 
@@ -366,12 +375,176 @@ const updateUserCoverImage = asyncHandler(async (req, res) => {
         { new: true }
     ).select("-password")
 
+    fs.unlinkSync(coverImageLocalPath)
+
     return res
         .status(200)
         .json(
             new ApiResponse(200, user, "Cover image updated successfully")
         )
 })
+
+
+// ----------------------AGGREGATION PIPELINE------------
+
+//---------------------GET USER CHANNEL PROFILE----------
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+    // username from url i.e. req.params 
+    const { username } = req.params;
+
+    if (!username?.trim()) throw new ApiError(400, "username is missing")
+
+    const channel = await User.aggregate([
+        // ------------- Pipeline-1 -------------
+        {
+            $match: {
+                username: username?.toLowerCase()
+            },
+        },
+
+        // ------------- Pipeline-2 -------------
+        // Collect all documents where the field channel equals User’s _id.
+        // shows users who subscribed to this user.
+        {
+            //  model "Subscription" in database saved as "subscriptions"
+
+            $lookup: {
+                from: "subscriptions",      //→ look into the subscriptions collection.
+                localField: "_id",          // → take the user’s _id.  
+                foreignField: "channel",    // → compare it with the channel field in subscriptions. 
+                as: "subscribers"           // → create a new field named subscribers in the result, 
+                //   containing all matching documents (i.e., users who subscribed to this channel).
+            }
+        },
+
+        // ------------- Pipeline-3 -------------
+        // Collect all documents where the field subscriber equals Nasir’s _id.
+        // Then put all those documents inside a new array field called subscribedTo.”
+        // shows channels/users this user follows.
+        {
+            $lookup: {
+                from: "subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",    // ( match with who he follows )
+                as: "subscribedTo"             // ← new field added
+            }
+
+        },
+
+        // ------------- Pipeline-4 -------------
+        {
+            $addFields: {
+                subscriberCount: {
+                    $size: "$subscribers"
+                },
+                channelSubscribedToCount: {
+                    $size: "$subscribedTo"
+                },
+                isSubscribed: {
+                    $cond: {
+                        // subscriber is from model subscribers
+                        if: { $in: [req.user?._id, "$subscribers.subscriber"] },
+                        then: true,
+                        else: false
+                    }
+                }
+            }
+        },
+
+        // ------------- Pipeline-5 -------------
+        {
+            // fields to be projection
+            $project: {
+                fullName: 1, // 1 is a flag
+                username: 1,
+                subscriberCount: 1,
+                channelSubscribedToCount: 1,
+                isSubscribed: 1,
+                avatar: 1,
+                coverImage: 1,
+                email: 1
+
+            }
+        }
+
+        // --------------------------------------
+
+    ])
+
+    if (!channel?.length) {
+        throw new ApiError(404, "channel does not exists")
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(200, channel[0],
+                "User channel fetched successfully")
+        )
+})
+
+
+//---------------------Get Watch History ----------------
+const getWatchHistory = asyncHandler(async (req, res) => {
+    const user = await User.aggregate([
+        {
+            $match: {
+                // ObjectId('213kla9873hhh987322')
+                // req.user._id is likely a string.
+                // Aggregation pipelines run directly on MongoDB, not through Mongoose’s type casting,
+                // so we must manually convert it to ObjectId for an exact match.
+
+                _id: new mongoose.Types.ObjectId(String(req.user._id)) // ✅ correct  ObjectId type
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "watchHistory",
+                foreignField: "_id",
+                as: "watchHistory",
+                pipeline: [
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "owner",
+                            pipeline: [
+                                {
+                                    $project: {
+                                        fullName: 1,
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields: {
+                            owner: {
+                                $firsrt: "$owner"
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    ])
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                user[0].watchHistory,
+                "Watch history fetched successfully"
+            )
+        )
+})
+
+
 
 export {
     registerUser,
@@ -382,7 +555,9 @@ export {
     getCurrentUser,
     updateAccountDetails,
     updateUserAvatar,
-    updateUserCoverImage
+    updateUserCoverImage,
+    getUserChannelProfile,
+    getWatchHistory
 }
 
 
@@ -412,5 +587,23 @@ export {
 // secure: true
 // Means the cookie will only be sent over HTTPS connections.
 // It will not be sent over plain HTTP (insecure) connections.
+
+//-----------------------------------------------------------------------
+
+
+
+// {
+//   from: "subscriptions",
+//   localField: "_id",        // Nasir’s _id = 1
+//   foreignField: "channel",  // match with "channel" field in subscriptions
+//   as: "subscribers"
+// }
+// ➡ MongoDB looks for all subscriptions where
+// channel === 1 (Nasir’s ID).
+
+// Matches:
+
+// { subscriber: 2, channel: 1 }
+// { subscriber: 3, channel: 1 }
 
 //-----------------------------------------------------------------------
