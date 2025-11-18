@@ -31,7 +31,7 @@ const registerUser = asyncHandler(async (req, res) => {
     // upload them to cloundinary, avatar
     // create user object - create entry in db
     // remove password and refresh token field from response
-    // check fro user creation
+    // check for user creation
     // return res
 
     const {
@@ -132,7 +132,7 @@ const loginUser = asyncHandler(async (req, res) => {
 
     // }
 
-    //here user does not have refresh token it is empty here.
+    //here user does not have refresh token, it is empty here.
     const user = await User.findOne({
         $or: [
             { username },
@@ -488,6 +488,8 @@ const getUserChannelProfile = asyncHandler(async (req, res) => {
 const getWatchHistory = asyncHandler(async (req, res) => {
     const user = await User.aggregate([
         {
+            // → Filters the User collection to only this user 
+            // (the one making the request).
             $match: {
                 // ObjectId('213kla9873hhh987322')
                 // req.user._id is likely a string.
@@ -524,7 +526,7 @@ const getWatchHistory = asyncHandler(async (req, res) => {
                     {
                         $addFields: {
                             owner: {
-                                $firsrt: "$owner"
+                                $first: "$owner"
                             }
                         }
                     }
@@ -607,3 +609,12 @@ export {
 // { subscriber: 3, channel: 1 }
 
 //-----------------------------------------------------------------------
+
+
+
+// router.route("/login").post(loginUser)
+
+// When a user calls /login, Express executes:
+
+// loginUser(req, res, next)
+// But remember, loginUser is the function returned by asyncHandler.

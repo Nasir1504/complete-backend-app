@@ -16,12 +16,11 @@ app.use(cookieParser())
 
 
 //routes import
-
 import userRouter from "./routes/user.routes.js";
 
 
 //routes declaration
-
+// If the incoming request URL starts with /api/v1/users, then pass control to this middleware (here, userRouter).
 //http://localhost:8000/api/v1/users/register
 app.use("/api/v1/users", userRouter)
 
